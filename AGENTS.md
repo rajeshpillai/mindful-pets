@@ -13,9 +13,15 @@ code name; the repo is github.com/rajeshpillai/mindful-pets.
 
 ## Commands the user gives
 
-- **"ship it" or "deploy"**: run `scripts/ship`. It builds with
-  `-Doptimize=ReleaseSafe` and copies `pet` (the `auto` backend) and `petctl`
-  into `~/Desktop/tools`. Commit and push first if there are changes, then ship.
+- **"ship it" or "deploy"**: commit and push first if there are changes,
+  then run `scripts/ship`. It builds with `-Doptimize=ReleaseSafe`, copies
+  `pet` (the `auto` backend) and `petctl` into `~/Desktop/tools`, and
+  publishes a GitHub release: tag `vYYYY.MM.DD` (`.N` for later ones that
+  day) on HEAD, asset `mindful-pets-TAG-linux-ARCH.tar.gz` (pet, petctl,
+  install-extension, the extension, README) plus its `.sha256`, notes from
+  the commits since the previous tag. It refuses to release a dirty tree or a
+  HEAD that is not `origin/main`. Report the release URL it prints.
+  `scripts/ship --no-release` only copies to the tools folder.
 - Zig reference: https://ziglang.in (the user's own site), tracks master.
 
 ## Build, test, check
