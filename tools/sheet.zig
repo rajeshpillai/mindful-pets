@@ -1,6 +1,8 @@
 //! Dev tool: writes every sprite frame, scaled 4x on a checkerboard, to a
 //! binary PPM so the art can be reviewed with any image viewer.
-//! Usage: sheet OUT.ppm
+//! Usage: sheet OUT.ppm [FRAMES_DIR]
+//! With FRAMES_DIR, also writes each frame as raw 16x16 RGBA
+//! (NAME-ANIM-I.rgba, alpha last) for tools/make_gifs.py.
 
 const std = @import("std");
 const c = @import("c");
@@ -32,6 +34,7 @@ pub fn main(init: std.process.Init) !void {
     var it = init.minimal.args.iterate();
     _ = it.skip();
     const out_path = it.next() orelse "sheet.ppm";
+    if (it.next()) |dir| try writeFrames(dir);
 
     const transforms = [_]sprites.Transform{ .none, .flip_h, .flip_v, .rot180, .wall_left, .wall_right };
     // Each character gets a column block 4 frames wide.
@@ -109,4 +112,26 @@ pub fn main(init: std.process.Init) !void {
     _ = c.fwrite(h.ptr, 1, h.len, f);
     _ = c.fwrite(buf.ptr, 1, buf.len, f);
     std.debug.print("sheet: wrote {s} ({d}x{d})\n", .{ out_path, width, height });
+}
+
+fn writeFrames(dir: []const u8) !void {
+    var n: usize = 0;
+    for (sprites.all) |ch| inline for (anims) |a| for (@field(ch, a), 0..) |frame, fi| {
+        var path_buf: [1024:0]u8 = undefined;
+        const path = try std.mem.printSentinel(&path_buf, "{s}/{s}-{s}-{d}.rgba", .{ dir, ch.name, a, fi }, 0);
+        var rgba: [sprites.W * sprites.H * 4]u8 = undefined;
+        for (0..sprites.H) |y| for (0..sprites.W) |x| {
+            const px = frame.px[y][x];
+            const i = (y * sprites.W + x) * 4;
+            rgba[i] = @truncate(px >> 16);
+            rgba[i + 1] = @truncate(px >> 8);
+            rgba[i + 2] = @truncate(px);
+            rgba[i + 3] = @truncate(px >> 24);
+        };
+        const f = c.fopen(path.ptr, "wb") orelse return error.CannotOpenOutput;
+        _ = c.fwrite(&rgba, 1, rgba.len, f);
+        _ = c.fclose(f);
+        n += 1;
+    };
+    std.debug.print("sheet: wrote {d} frames to {s}\n", .{ n, dir });
 }

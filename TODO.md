@@ -91,3 +91,25 @@ contract). The pipe and shell-audio code are POSIX and also need a home.
       stacking on one pixel (per-chase random offset)
 - [ ] Let pets notice each other (sit together, chase)
 - [ ] Per-animal behaviour (rabbit hops in arcs, dog fetches the cursor)
+
+## 8. Ideas from DesktopDuck
+
+Ideas only, noted 2026-11-11 from github.com/SteveSyfuhs/DesktopDuck (a
+WinForms mother duck and ducklings walking the screen edge). Best fits first.
+
+- [ ] Follow-the-leader parade for `--roam-group`: followers trail a leader
+      at a fixed spacing, each with a pace that drifts every few seconds
+- [ ] Leader stops, turns and calls when a follower falls far behind;
+      followers speed up (~1.6x) until the gap closes
+- [ ] `--baby`: a smaller copy of the same animal that trails its parent
+- [ ] `petctl pause` / `resume`: hold the pet in sit/idle without quitting
+- [ ] Use the real work area (Meta `get_work_area_for_monitor`, X11
+      `_NET_WORKAREA`) instead of the fixed `--top N`
+- [ ] Continuous perimeter patrol (floor, wall, ceiling, wall) built on the
+      climb/cling/hang frames, with a short curved hop at each corner
+- [ ] `--volume` that scales the embedded WAV samples at startup
+- [ ] Named `--speed slow|normal|fast` before the config file lands
+- [ ] Say "lost my voice" in the bubble once when no audio player is found
+- [ ] Settings changed live (`petctl set scale 6`) and saved atomically
+- [ ] Right-click menu (pause, sound, speed, size, quit) drawn by the
+      extension or the pet; changes what right click means today

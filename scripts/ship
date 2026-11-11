@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # "Ship it" / "deploy": build an optimized binary, copy it, with petctl,
-# into the user's tools folder, and publish a GitHub release with the same
-# binaries.
+# into the user's tools folder, then tag a GitHub release.
 #
 #   scripts/ship [--no-release] [DEST]     default DEST: ~/Desktop/tools
 #
 # The release is tagged vYYYY.MM.DD (vYYYY.MM.DD.N for later releases the
 # same day) on the current HEAD, which must be committed and pushed to
-# origin/main. Its asset is mindful-pets-TAG-linux-ARCH.tar.gz holding pet,
-# scripts/petctl, scripts/install-extension, the GNOME Shell extension and
-# README.md, plus a .sha256 next to it.
+# origin/main. Pushing the tag starts .github/workflows/release.yml, which
+# cross-builds x86_64 and aarch64 archives with scripts/package and
+# publishes them; this script waits for that run and prints the release URL.
 set -euo pipefail
 
 release=1
@@ -17,7 +16,7 @@ dest=""
 for arg in "$@"; do
   case "$arg" in
     --no-release) release=0 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) dest="$arg" ;;
   esac
 done
@@ -62,36 +61,23 @@ while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
   tag="$base.$n"
 done
 
-arch="$(uname -m)"
-name="mindful-pets-$tag-linux-$arch"
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-pkg="$work/$name"
-mkdir -p "$pkg/scripts"
-install -m 755 zig-out/bin/pet "$pkg/pet"
-install -m 755 scripts/petctl scripts/install-extension "$pkg/scripts/"
-cp -r gnome-extension "$pkg/gnome-extension"
-cp README.md "$pkg/"
-tar -C "$work" -czf "$work/$name.tar.gz" "$name"
-(cd "$work" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
-
-prev="$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
-notes="$work/notes.md"
-{
-  echo "Built from $rev with \`zig build -Doptimize=ReleaseSafe\` (auto backend: GNOME Shell extension when running, X11 otherwise)."
-  echo
-  echo "Unpack, run \`scripts/install-extension\` for the GNOME backend, then \`./pet\`. Needs libX11/libXext/libXfixes/libXrandr and python3 for petctl."
-  echo
-  echo "## Changes"
-  if [ -n "$prev" ]; then
-    git log --no-merges --format='- %s' "$prev..HEAD"
-  else
-    git log --no-merges --format='- %s' -n 20
-  fi
-} > "$notes"
-
 git tag -a "$tag" -m "mindful-pets $tag"
 git push -q origin "$tag"
-gh release create "$tag" --title "mindful-pets $tag" --notes-file "$notes" \
-  "$work/$name.tar.gz" "$work/$name.tar.gz.sha256"
+echo "pushed $tag; .github/workflows/release.yml builds and publishes it"
+
+# Wait for the tag's workflow run so a failed CI build is seen right away.
+run=""
+for _ in $(seq 30); do
+  run="$(gh run list --workflow release.yml --branch "$tag" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
+  [ -n "$run" ] && break
+  sleep 2
+done
+if [ -z "$run" ]; then
+  echo "ship: no release workflow run found for $tag; check the Actions tab" >&2
+  exit 1
+fi
+gh run watch "$run" --exit-status >/dev/null || {
+  echo "ship: release build failed: $(gh run view "$run" --json url -q .url)" >&2
+  exit 1
+}
 echo "released $tag: $(gh release view "$tag" --json url -q .url)"

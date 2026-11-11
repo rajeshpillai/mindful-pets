@@ -5,6 +5,14 @@ on the edges of your screen. It wanders, naps, climbs the sides, hangs from the 
 down, chases your mouse, swipes at it, and reacts with sounds to events you
 send it from scripts (a failed build, a finished deploy, a Claude Code hook).
 
+<p align="center"><img src="docs/img/pets.gif" alt="The cat, dog and rabbit walk in, then idle, purr, type, hiss, swipe and fall asleep" width="468"></p>
+
+| Cat | Dog | Rabbit |
+| :---: | :---: | :---: |
+| <img src="docs/img/cat-walk.gif" alt="cat walking" width="60"> `--pet cat` | <img src="docs/img/dog-walk.gif" alt="dog walking" width="60"> `--pet dog` | <img src="docs/img/rabbit-walk.gif" alt="rabbit walking" width="60"> `--pet rabbit` |
+
+The GIFs are rendered from the sprite data by `tools/make_gifs.py`.
+
 It is a prototype. The default backend uses the GNOME Shell extension when
 available and otherwise talks to X11 through XWayland. See [Limitations](#limitations).
 
@@ -19,6 +27,15 @@ available and otherwise talks to X11 through XWayland. See [Limitations](#limita
 - For sound, one of `pw-play`, `paplay`, `aplay` or `ffplay` on PATH (optional)
 - Python 3 for `scripts/petctl` (non-blocking command writes)
 
+## Download
+
+Each [release](https://github.com/rajeshpillai/mindful-pets/releases) has
+prebuilt Linux archives for x86_64 and aarch64 (glibc 2.31 or newer, so
+Ubuntu 20.04, Debian 11, Fedora 32 and later). Unpack one, run
+`scripts/install-extension` if you use GNOME (then log out and in once),
+and start `./pet`. The runtime libraries `libX11`, `libXext`, `libXfixes`
+and `libXrandr` are already on any X11 or XWayland desktop.
+
 ## Build and run
 
 ```sh
@@ -31,6 +48,15 @@ zig build sheet      # dump every animation frame to zig-out/sheet.ppm
 python3 tools/test_integration.py  # private sockets/FIFOs; no real desktop is touched
 node tools/test_extension.mjs     # extension protocol and click-through checks (Node.js)
 python3 tools/test_x11.py         # primary/roaming/resize checks (Xvfb, xrandr, xdotool)
+```
+
+To cross-compile, fetch the target's X11 libraries once and point the build
+at them (this is what `scripts/package` does for the release archives):
+
+```sh
+python3 tools/cross_sysroot.py aarch64      # prints .cache/sysroot/aarch64
+zig build -Doptimize=ReleaseSafe -Dtarget=aarch64-linux-gnu.2.31 \
+  -Dx11-sysroot=$PWD/.cache/sysroot/aarch64
 ```
 
 ## Command line
@@ -62,7 +88,7 @@ Mouse:
 | Action | Result |
 | --- | --- |
 | Move the pointer near it | It runs after the pointer and sits down beside it. Several pets each pick their own spot, so they do not pile up. |
-| Rest the pointer on it | After about a second it swipes a paw at it. |
+| Rest the pointer on it | After about a second it swipes a paw at it. <img src="docs/img/react-bat.gif" alt="swiping a paw" width="96" align="right"> |
 | Left click | It startles and meows. |
 | Drag | Carry it anywhere. Drop it above the floor and it falls. |
 | Right click | Quit. |
@@ -148,19 +174,19 @@ members; keeping the file avoids splitting a group as pets join or leave.
 The pet listens on a named pipe at `$XDG_RUNTIME_DIR/pet.fifo` (or
 `pet-NAME.fifo` for a named instance). Write one command per line:
 
-| Command | Effect |
-| --- | --- |
-| `ok`, `pass`, `happy` | Content: eyes closed, little heart. |
-| `fail`, `error`, `angry` | Hisses, then sulks. |
-| `work`, `busy` | Sits and types until `ok`, `fail` or `done` arrives (gives up after 15 min). Ignores the pointer meanwhile. |
-| `done`, `idle` | Ends `work` without a verdict. |
-| `climb` | Walk to the nearest screen edge and climb it. |
-| `say TEXT` | Show TEXT in a speech bubble for a few seconds (up to 40 characters, uppercase font). |
-| `sleep` | Curls up until woken. |
-| `wake` | Wakes a sleeping cat. |
-| `meow`, `alert`, `poke` | Startle it. |
-| `goto X` | Walk so its centre ends up at screen x coordinate X. |
-| `quit`, `exit` | Exit. |
+| Command | Effect | |
+| --- | --- | --- |
+| `ok`, `pass`, `happy` | Content: eyes closed, little heart. | <img src="docs/img/react-happy.gif" alt="happy" width="96"> |
+| `fail`, `error`, `angry` | Hisses, then sulks. | <img src="docs/img/react-angry.gif" alt="angry" width="96"> |
+| `work`, `busy` | Sits and types until `ok`, `fail` or `done` arrives (gives up after 15 min). Ignores the pointer meanwhile. | <img src="docs/img/react-work.gif" alt="work" width="96"> |
+| `done`, `idle` | Ends `work` without a verdict. | |
+| `climb` | Walk to the nearest screen edge and climb it. | |
+| `say TEXT` | Show TEXT in a speech bubble for a few seconds (up to 40 characters, uppercase font). | |
+| `sleep` | Curls up until woken. | <img src="docs/img/react-sleep.gif" alt="sleep" width="96"> |
+| `wake` | Wakes a sleeping cat. | |
+| `meow`, `alert`, `poke` | Startle it. | <img src="docs/img/react-alert.gif" alt="alert" width="96"> |
+| `goto X` | Walk so its centre ends up at screen x coordinate X. | |
+| `quit`, `exit` | Exit. | |
 
 ### petctl and shell integration
 
@@ -229,6 +255,7 @@ src/c.h          the C headers translated by build.zig (Xlib, XFixes, libc bits)
 src/assets/      WAV clips, embedded at build time by src/audio.zig
 tools/gen_sounds.py  regenerates those clips (stdlib Python)
 tools/sheet.zig  renders all frames to a PPM for reviewing the art
+tools/make_gifs.py  renders the README GIFs into docs/img (Pillow)
 tools/test_integration.py  regression tests against a fake shell on a private socket (Python 3)
 tools/test_extension.mjs   extension protocol and click-through checks (Node.js)
 scripts/petctl   send a command to the pipe, or wrap a command and report its result (Python 3)

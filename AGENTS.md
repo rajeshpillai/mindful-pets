@@ -15,13 +15,15 @@ code name; the repo is github.com/rajeshpillai/mindful-pets.
 
 - **"ship it" or "deploy"**: commit and push first if there are changes,
   then run `scripts/ship`. It builds with `-Doptimize=ReleaseSafe`, copies
-  `pet` (the `auto` backend) and `petctl` into `~/Desktop/tools`, and
-  publishes a GitHub release: tag `vYYYY.MM.DD` (`.N` for later ones that
-  day) on HEAD, asset `mindful-pets-TAG-linux-ARCH.tar.gz` (pet, petctl,
-  install-extension, the extension, README) plus its `.sha256`, notes from
-  the commits since the previous tag. It refuses to release a dirty tree or a
-  HEAD that is not `origin/main`. Report the release URL it prints.
-  `scripts/ship --no-release` only copies to the tools folder.
+  `pet` (the `auto` backend) and `petctl` into `~/Desktop/tools`, then tags
+  HEAD `vYYYY.MM.DD` (`.N` for later ones that day) and pushes the tag.
+  The tag starts `.github/workflows/release.yml`, which cross-builds
+  x86_64 and aarch64 archives with `scripts/package` and publishes the
+  GitHub release; ship waits for that run and prints the release URL (pass
+  it on) or the failed run's URL. It refuses a dirty tree or a HEAD that is
+  not `origin/main`. `scripts/ship --no-release` only copies locally.
+  The workflow pins the Zig dev build in `release.yml`; bump it when the
+  local toolchain moves.
 - Zig reference: https://ziglang.in (the user's own site), tracks master.
 
 ## Build, test, check
@@ -72,6 +74,10 @@ scripts/petctl      send a command; `petctl run CMD`; `-n NAME` for named instan
                     (atomic non-blocking write, dropped when the pipe is full)
 scripts/pet.sh      shell shortcuts (zb, zt, pet_run, pet_say)
 scripts/ship        the "ship it" action
+scripts/package     cross-build release archives into dist/ (CI runs it; works locally)
+tools/cross_sysroot.py  fetch focal X11 headers/libs per arch into .cache/sysroot for -Dx11-sysroot
+.github/workflows/release.yml  v* tag -> scripts/package -> GitHub release
+tools/make_gifs.py  README GIFs in docs/img from the sprite frames (`zig build frames`, Pillow)
 tools/sheet.zig     sprite sheet dump; tools/gen_sounds.py regenerates src/assets/*.wav
 tools/test_integration.py  private-socket/FIFO regressions against a fake shell (python3, needs zig build)
 tools/test_extension.mjs   extension protocol and hit-testing checks with a stub actor (node)
@@ -140,6 +146,6 @@ tools/test_x11.py          XRandR primary/roaming/resize regressions in a privat
 - New reaction: add frames to every file in `src/characters/` and a field in
   `sprites.Character`, a `State`/`Event` in pet.zig, a word in
   `events.parse`, the usage string in main.zig, `anims` in tools/sheet.zig,
-  and the README table.
+  and the README table. Changed art: rerun `python3 tools/make_gifs.py`.
 - Commit messages: imperative summary line, body with bullets, co-author
   trailer as configured. Push to `origin main` after committing.

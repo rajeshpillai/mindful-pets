@@ -1,0 +1,57 @@
+# Pushing a v* tag (scripts/ship does this) builds the Linux binaries and
+# publishes them as a GitHub release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: existing tag to (re)build
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: mlugg/setup-zig@v2
+        with:
+          # Pinned to the dev build the code is written against; Zig master
+          # still breaks std APIs between builds.
+          version: 0.18.0-dev.567+7f0281900
+      - name: Package
+        run: scripts/package "$TAG"
+      - name: Release notes
+        run: |
+          prev="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
+          {
+            echo "Linux builds (x86_64, aarch64) of $(git rev-parse --short "$TAG"), glibc 2.31 or newer."
+            echo
+            echo "Unpack, run \`scripts/install-extension\` for the GNOME Shell backend (log out and in once), then \`./pet\`."
+            echo "Without the extension it falls back to X11. Needs libX11, libXext, libXfixes, libXrandr, and python3 for \`scripts/petctl\`."
+            echo
+            echo "## Changes"
+            if [ -n "$prev" ]; then
+              git log --no-merges --format='- %s' "$prev..$TAG"
+            else
+              git log --no-merges --format='- %s' -n 20 "$TAG"
+            fi
+          } > notes.md
+      - name: Publish
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" --title "mindful-pets $TAG" --notes-file notes.md dist/*
+          fi

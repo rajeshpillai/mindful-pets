@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Cross-build release archives for every Linux target into dist/.
+#
+#   scripts/package TAG [ARCH...]     ARCH default: x86_64 aarch64
+#
+# Each target links against glibc 2.31 and the X11 libraries fetched by
+# tools/cross_sysroot.py, so one binary runs on any distro from 2020 on.
+# Writes dist/mindful-pets-TAG-linux-ARCH.tar.gz holding pet,
+# scripts/petctl, scripts/install-extension, the GNOME Shell extension and
+# README.md, and dist/SHA256SUMS. Used by .github/workflows/release.yml.
+set -euo pipefail
+
+tag="${1:?usage: scripts/package TAG [ARCH...]}"
+shift
+archs=("$@")
+[ ${#archs[@]} -gt 0 ] || archs=(x86_64 aarch64)
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+rm -rf dist
+mkdir -p dist
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+for arch in "${archs[@]}"; do
+  sysroot="$(python3 tools/cross_sysroot.py "$arch")"
+  zig build -Doptimize=ReleaseSafe -Dtarget="$arch-linux-gnu.2.31" \
+    -Dx11-sysroot="$sysroot" --prefix "$work/out-$arch"
+  name="mindful-pets-$tag-linux-$arch"
+  pkg="$work/$name"
+  mkdir -p "$pkg/scripts"
+  install -m 755 "$work/out-$arch/bin/pet" "$pkg/pet"
+  install -m 755 scripts/petctl scripts/install-extension "$pkg/scripts/"
+  cp -r gnome-extension "$pkg/gnome-extension"
+  cp README.md "$pkg/"
+  tar -C "$work" -czf "dist/$name.tar.gz" "$name"
+  echo "packaged dist/$name.tar.gz"
+done
+(cd dist && sha256sum ./*.tar.gz | sed 's# \./# #' > SHA256SUMS)
