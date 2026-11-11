@@ -3,10 +3,10 @@
 //! how its compositor works. Backends: `x11` (Xlib, also used under XWayland),
 //! `gnome` (a Clutter actor drawn by the GNOME Shell extension in
 //! gnome-extension/, over a Unix socket) and `auto` (gnome when the extension
-//! is running, else x11; the default). Planned: AppKit on macOS, Win32 layered
-//! windows on Windows.
+//! is running, else x11; the Linux default), `win32` (a layered window, the
+//! Windows default) and `appkit` (a borderless NSWindow, the macOS default).
 //!
-//! Pick one with `zig build -Dbackend=x11|gnome|auto`.
+//! Pick one with `zig build -Dbackend=x11|gnome|auto|win32|appkit`.
 
 const std = @import("std");
 const options = @import("build_options");
@@ -18,6 +18,8 @@ const impl = switch (kind) {
     .x11 => @import("backend/x11.zig"),
     .gnome => @import("backend/gnome.zig"),
     .auto => @import("backend/auto.zig"),
+    .win32 => @import("backend/win32.zig"),
+    .appkit => @import("backend/appkit.zig"),
 };
 
 /// Name of the compiled-in backend. `Window.backendName()` tells which one a

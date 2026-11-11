@@ -2,6 +2,7 @@
 //! updates consistent across pet processes without electing a permanent leader.
 //! Any member can advance a due plan; a busy member joins when it is free again.
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("c");
 const geometry = @import("monitors.zig");
 
@@ -147,13 +148,32 @@ const Shared = extern struct {
 
 pub const Plan = struct { monitor: geometry.Monitor, revision: u64, target_x: f32 };
 
-pub const Group = struct {
+/// Windows has no flock; a group there would need LockFileEx on a file in
+/// %LOCALAPPDATA%. Until then `--roam-group` reports this and the pet roams alone.
+pub const Group = if (builtin.os.tag == .windows) UnsupportedGroup else PosixGroup;
+
+const UnsupportedGroup = struct {
+    pub fn open(name: []const u8, nonce: u64) !UnsupportedGroup {
+        _ = name;
+        _ = nonce;
+        return error.RoamingGroupsUnsupportedOnWindows;
+    }
+    pub fn close(self: *UnsupportedGroup) void {
+        _ = self;
+    }
+    pub fn poll(self: *UnsupportedGroup, now: i64, size: u32, monitors: *const geometry.Monitors, current: geometry.Monitor, requested: ?geometry.Monitor, ready: bool, rand: std.Random) !?Plan {
+        _ = .{ self, now, size, monitors, current, requested, ready, rand };
+        return null;
+    }
+};
+
+const PosixGroup = struct {
     fd: c_int,
     id: u64,
     next_poll_ms: i64 = 0,
     pending_monitor: ?geometry.Monitor = null,
 
-    pub fn open(name: []const u8, nonce: u64) !Group {
+    pub fn open(name: []const u8, nonce: u64) !PosixGroup {
         const dir: []const u8 = if (c.getenv("XDG_RUNTIME_DIR")) |d| std.mem.span(d) else "/tmp";
         var buf: [512:0]u8 = undefined;
         const path = try std.mem.printSentinel(&buf, "{s}/pet-roam-{d}-{s}.state", .{ dir, c.geteuid(), name }, 0);
@@ -166,13 +186,13 @@ pub const Group = struct {
         return .{ .fd = fd, .id = if (nonce == 0) 1 else nonce };
     }
 
-    pub fn close(self: *Group) void {
+    pub fn close(self: *PosixGroup) void {
         _ = c.close(self.fd);
         // Keep the inode: unlinking can split a group when a new member is joining.
         // Its heartbeat expires after three seconds with no active members.
     }
 
-    pub fn poll(self: *Group, now: i64, size: u32, monitors: *const geometry.Monitors, current: geometry.Monitor, requested: ?geometry.Monitor, ready: bool, rand: std.Random) !?Plan {
+    pub fn poll(self: *PosixGroup, now: i64, size: u32, monitors: *const geometry.Monitors, current: geometry.Monitor, requested: ?geometry.Monitor, ready: bool, rand: std.Random) !?Plan {
         if (requested) |m| self.pending_monitor = m;
         if (self.pending_monitor) |m| {
             var exists = false;

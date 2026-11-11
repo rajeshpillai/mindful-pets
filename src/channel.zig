@@ -15,7 +15,7 @@ const builtin = @import("builtin");
 const events = @import("events.zig");
 
 const impl = switch (builtin.os.tag) {
-    .windows => @compileError("no command channel for Windows yet; see TODO.md section 6"),
+    .windows => @import("channel/win_pipe.zig"),
     else => @import("channel/fifo.zig"),
 };
 

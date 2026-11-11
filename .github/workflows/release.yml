@@ -1,5 +1,5 @@
-# Pushing a v* tag (scripts/ship does this) builds the Linux binaries and
-# publishes them as a GitHub release.
+# Pushing a v* tag (scripts/ship does this) cross-builds Linux, Windows and
+# macOS archives on one Linux runner and publishes them as a GitHub release.
 name: release
 
 on:
@@ -36,10 +36,11 @@ jobs:
         run: |
           prev="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
           {
-            echo "Linux builds (x86_64, aarch64) of $(git rev-parse --short "$TAG"), glibc 2.31 or newer."
+            echo "Builds of $(git rev-parse --short "$TAG") for Linux, Windows and macOS (x86_64 and aarch64)."
             echo
-            echo "Unpack, run \`scripts/install-extension\` for the GNOME Shell backend (log out and in once), then \`./pet\`."
-            echo "Without the extension it falls back to X11. Needs libX11, libXext, libXfixes, libXrandr, and python3 for \`scripts/petctl\`."
+            echo "- **Linux** (glibc 2.31+): unpack, run \`scripts/install-extension\` for the GNOME Shell backend (log out and in once), then \`./pet\`. Without the extension it uses X11."
+            echo "- **Windows** (10 or later): unzip and run \`pet.exe\`; send commands with \`petctl.ps1\`. SmartScreen may ask to confirm the unsigned exe."
+            echo "- **macOS** (11 or later): unpack, then \`xattr -d com.apple.quarantine pet\` once (the binary is not notarized) and run \`./pet\`."
             echo
             echo "## Changes"
             if [ -n "$prev" ]; then

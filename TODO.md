@@ -67,20 +67,22 @@ agreed to tackle things; it is not a promise.
 
 ## 6. Other platforms
 
-Each needs a sibling of `src/backend/x11.zig` (see AGENTS.md for the
-contract). The pipe and shell-audio code are POSIX and also need a home.
-
-- [ ] macOS: AppKit backend via the Objective-C runtime, borderless
-      non-activating NSWindow at status-bar level; `afplay` for sound
-- [ ] Windows: Win32 layered window (WS_EX_LAYERED | WS_EX_TRANSPARENT,
-      UpdateLayeredWindow), PlaySound; commands over a Win32 named pipe or a
-      local socket, and a petctl that is not bash
+- [x] macOS: AppKit backend via the Objective-C runtime (dlopen, no SDK),
+      borderless non-activating NSPanel at status-bar level; `afplay`;
+      the POSIX FIFO and `scripts/petctl`
+- [x] Windows: Win32 layered window, UpdateLayeredWindow, PlaySound;
+      commands over `\\.\pipe\pet` and `scripts/petctl.ps1`
+- [ ] Try both on real machines: click-through on transparent pixels,
+      dragging across monitors, Retina/high-DPI sizing, the pipe under load
+- [ ] Windows `--roam-group`: LockFileEx on a file in %LOCALAPPDATA%
+- [ ] Sign and notarize (Authenticode, Apple Developer ID) so SmartScreen
+      and Gatekeeper stop warning
 - [ ] Native Wayland: not as a plain client (no absolute placement or global
       pointer); the GNOME Shell extension above is the route on GNOME,
       wlr-layer-shell could serve Sway/Hyprland
 - [x] Move the command channel and audio behind small interfaces too
       (`src/channel.zig`, `src/audio.zig`, selected on `builtin.os.tag`)
-- [ ] Replace the libc `getenv`/`clock_gettime` left in main.zig with the
+- [ ] Replace the libc `getenv`/`clock_gettime` in `src/os.zig` with the
       `std.Io` equivalents once that API settles
 
 ## 7. Art pipeline

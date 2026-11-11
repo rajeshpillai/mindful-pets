@@ -1,5 +1,6 @@
 const std = @import("std");
-const c = @import("c");
+const builtin = @import("builtin");
+const os = @import("os.zig");
 const backend = @import("backend.zig");
 const petmod = @import("pet.zig");
 const sprites = @import("sprites.zig");
@@ -33,7 +34,7 @@ const usage =
     \\A small animal that lives on the edges of your screen.
     \\
     \\  --pet KIND  which animal: cat (default), dog or rabbit
-    \\  --name NAME run as a named instance listening on pet-NAME.fifo, so you can
+    \\  --name NAME run as a named instance with its own command pipe (pet-NAME), so you can
     \\              run several at once and address each with petctl -n NAME
     \\  --scale N   pixel zoom of the 16x16 art, 1..12 (default 4 = 64px)
     \\  --top N     pixels reserved for the top panel; the cat hangs below it (default 32)
@@ -44,12 +45,15 @@ const usage =
     \\  -h, --help  show this help
     \\
     \\Mouse:  left-click = meow, drag = carry (it falls when dropped), rest the pointer on it = paw swipe, right-click = quit
-    \\Pipe:   echo fail > $XDG_RUNTIME_DIR/pet.fifo   (ok, fail, work, done, climb, sleep, wake, meow, say TEXT, goto X, quit)
     \\
-;
+++ "Pipe:   " ++ switch (builtin.os.tag) {
+    .windows => "petctl.ps1 fail      (writes to \\\\.\\pipe\\pet)",
+    .macos => "echo fail > /tmp/pet.fifo",
+    else => "echo fail > $XDG_RUNTIME_DIR/pet.fifo",
+} ++ "   (ok, fail, work, done, climb, sleep, wake, meow, say TEXT, goto X, quit)\n";
 
 pub fn main(init: std.process.Init) !void {
-    parseArgs(init.minimal.args);
+    parseArgs(init.minimal.args, init.arena.allocator());
 
     var win = try backend.Window.init(size, size);
     defer win.deinit();
@@ -85,7 +89,11 @@ pub fn main(init: std.process.Init) !void {
 
     var audio = audio_mod.Audio.init(!mute);
     var roaming = roaming_mod.Roaming.init(prng.random());
-    var group: ?group_mod.Group = if (roam_group) |n| try group_mod.Group.open(n, nowNs() ^ (@as(u64, @intCast(c.getpid())) << 32)) else null;
+    var group: ?group_mod.Group = if (roam_group) |n| group_mod.Group.open(n, nowNs() ^ (@as(u64, os.pid()) << 32)) catch |err| blk: {
+        if (builtin.os.tag != .windows) return err;
+        std.debug.print("pet: roaming groups are not supported on Windows yet; roaming alone\n", .{});
+        break :blk null;
+    } else null;
     defer if (group) |*g| g.close();
     var group_revision: u64 = 0;
     var manual_walk = false;
@@ -104,7 +112,7 @@ pub fn main(init: std.process.Init) !void {
     var last_frame: ?*const sprites.Frame = null;
     var last_transform = pet.transform();
     var raise_timer: f32 = 0;
-    const debug_events = c.getenv("PET_DEBUG") != null;
+    const debug_events = os.getenv("PET_DEBUG") != null;
     var bubble_logged = false;
 
     while (true) {
@@ -316,8 +324,11 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
-fn parseArgs(args: std.process.Args) void {
-    var it = args.iterate();
+/// Argument strings (the instance and group names) are kept for the whole
+/// run, so the iterator's buffer comes from the process arena. Windows needs
+/// one to decode its command line; elsewhere it is unused.
+fn parseArgs(args: std.process.Args, arena: std.mem.Allocator) void {
+    var it = args.iterateAllocator(arena) catch fail("cannot read the command line");
     _ = it.skip();
     while (it.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -404,9 +415,7 @@ fn applyInputShape(win: *backend.Window) void {
 }
 
 fn nowNs() u64 {
-    var ts: c.struct_timespec = undefined;
-    _ = c.clock_gettime(c.CLOCK_MONOTONIC, &ts);
-    return @as(u64, @intCast(ts.tv_sec)) * 1_000_000_000 + @as(u64, @intCast(ts.tv_nsec));
+    return os.nowNs();
 }
 
 fn nowMs() f64 {

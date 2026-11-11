@@ -7,8 +7,8 @@ roadmap, HANDOFF.md carries session-to-session state.
 
 A desktop pet in Zig: a pixel-art cat, dog or rabbit drawn by the GNOME Shell
 extension, with a transparent X11 override-redirect window as the fallback
-(runs under XWayland on GNOME). It reacts to
-commands on a named pipe and to Claude Code hooks. `jarvis-bot` was an old
+(runs under XWayland on GNOME), a layered window on Windows and an NSPanel on
+macOS. It reacts to commands on a named pipe and to Claude Code hooks. `jarvis-bot` was an old
 code name; the repo is github.com/rajeshpillai/mindful-pets.
 
 ## Commands the user gives
@@ -18,7 +18,8 @@ code name; the repo is github.com/rajeshpillai/mindful-pets.
   `pet` (the `auto` backend) and `petctl` into `~/Desktop/tools`, then tags
   HEAD `vYYYY.MM.DD` (`.N` for later ones that day) and pushes the tag.
   The tag starts `.github/workflows/release.yml`, which cross-builds
-  x86_64 and aarch64 archives with `scripts/package` and publishes the
+  Linux, Windows and macOS archives (x86_64 and aarch64) on one Linux
+  runner with `scripts/package` and publishes the
   GitHub release; ship waits for that run and prints the release URL (pass
   it on) or the failed run's URL. It refuses a dirty tree or a HEAD that is
   not `origin/main`. `scripts/ship --no-release` only copies locally.
@@ -35,6 +36,9 @@ zig build test            # unit tests (state machine, parser, font, characters)
 zig build sheet           # all frames -> zig-out/sheet.ppm (check art this way;
                           # GNOME blocks CLI screenshots)
 zig fmt --check build.zig src tools
+zig build -Dtarget=x86_64-windows-gnu && zig build -Dtarget=aarch64-macos
+                          # compile-check the other backends; nothing here can
+                          # run them (no Wine, no Mac), so say so when reporting
 python3 tools/test_integration.py   # after `zig build`: pet against a fake shell on a private
                                     # socket (monitor changes, bubble disconnect, input
                                     # negotiation, legacy extension) plus full/no-reader FIFOs
@@ -62,19 +66,23 @@ src/backend.zig     window backend interface: shared types, comptime selection, 
 src/backend/x11.zig Xlib implementation: window creation, XImage blit, XFixes input shape
 src/backend/gnome.zig  client of the GNOME Shell extension over a Unix socket; protocol in extension.js
 src/backend/auto.zig   default: probes the extension socket once, then wraps gnome or x11 for every window
+src/backend/win32.zig  Windows: layered WS_EX_TOPMOST tool window, UpdateLayeredWindow, own Win32 externs
+src/backend/appkit.zig macOS: NSPanel via objc_msgSend; AppKit/QuartzCore dlopen'd so no SDK is needed
+src/os.zig          clock, pid, getenv per OS (shared code must not call POSIX directly)
 gnome-extension/    mindful-pet@rajeshpillai.github.io: GJS extension, one Clutter actor per pet window
 scripts/install-extension  copy the extension into ~/.local/share/gnome-shell/extensions (enable rules inside)
 scripts/nested-shell       headless GNOME Shell with the extension, isolated from the real session, for tests;
                            `--ext DIR` loads the repo copy, extra flags go to gnome-shell (`--virtual-monitor WxH`)
 src/events.zig      command vocabulary + parser (shared by every channel)
-src/channel.zig     command channel interface, chosen by OS; channel/fifo.zig is the named pipe
-src/audio.zig       embedded WAV clips + playback interface, chosen by OS; audio/shell.zig shells out to a player
+src/channel.zig     command channel interface, chosen by OS; channel/fifo.zig (POSIX), channel/win_pipe.zig (\\.\pipe\pet, PIPE_NOWAIT)
+src/audio.zig       embedded WAV clips + playback interface, chosen by OS; audio/shell.zig shells out to a player, audio/win.zig PlaySound
 src/font.zig        3x5 font + speech bubble painter
 scripts/petctl      send a command; `petctl run CMD`; `-n NAME` for named instances; needs python3
                     (atomic non-blocking write, dropped when the pipe is full)
 scripts/pet.sh      shell shortcuts (zb, zt, pet_run, pet_say)
 scripts/ship        the "ship it" action
-scripts/package     cross-build release archives into dist/ (CI runs it; works locally)
+scripts/package     cross-build release archives for linux/windows/macos x x86_64/aarch64 into dist/ (CI runs it; works locally)
+scripts/petctl.ps1  Windows petctl (PowerShell, NamedPipeClientStream with a zero connect timeout)
 tools/cross_sysroot.py  fetch focal X11 headers/libs per arch into .cache/sysroot for -Dx11-sysroot
 .github/workflows/release.yml  v* tag -> scripts/package -> GitHub release
 tools/make_gifs.py  README GIFs in docs/img from the sprite frames (`zig build frames`, Pillow)
@@ -141,8 +149,11 @@ tools/test_x11.py          XRandR primary/roaming/resize regressions in a privat
   to the selected real monitor. Keep every socket operation on the compositor
   side non-blocking.
   The command channel (`src/channel.zig`) and audio (`src/audio.zig`) follow
-  the same pattern but select on `builtin.os.tag`; a Windows port adds
-  `channel/win_pipe.zig` and `audio/win.zig` and two switch arms.
+  the same pattern but select on `builtin.os.tag`. build.zig picks the
+  default backend from the target OS (win32, appkit, else auto); `src/c.h`
+  guards POSIX and X11 headers with `_WIN32`/`__linux__`, and shared code
+  goes through `src/os.zig`. An `@import` in a switch arm must name an
+  existing file even when that arm is never taken.
 - New reaction: add frames to every file in `src/characters/` and a field in
   `sprites.Character`, a `State`/`Event` in pet.zig, a word in
   `events.parse`, the usage string in main.zig, `anims` in tools/sheet.zig,

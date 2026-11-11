@@ -23,7 +23,7 @@ pub const clips = [_]Clip{
 };
 
 const impl = switch (builtin.os.tag) {
-    .windows => @compileError("no audio backend for Windows yet; see TODO.md section 6"),
+    .windows => @import("audio/win.zig"),
     else => @import("audio/shell.zig"),
 };
 

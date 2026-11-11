@@ -30,11 +30,17 @@ available and otherwise talks to X11 through XWayland. See [Limitations](#limita
 ## Download
 
 Each [release](https://github.com/rajeshpillai/mindful-pets/releases) has
-prebuilt Linux archives for x86_64 and aarch64 (glibc 2.31 or newer, so
-Ubuntu 20.04, Debian 11, Fedora 32 and later). Unpack one, run
-`scripts/install-extension` if you use GNOME (then log out and in once),
-and start `./pet`. The runtime libraries `libX11`, `libXext`, `libXfixes`
-and `libXrandr` are already on any X11 or XWayland desktop.
+prebuilt archives for x86_64 and aarch64:
+
+| System | Archive | Start it |
+| --- | --- | --- |
+| Linux (glibc 2.31+: Ubuntu 20.04, Debian 11, Fedora 32 and later) | `linux-*.tar.gz` | Run `scripts/install-extension` once if you use GNOME (then log out and in), then `./pet`. |
+| Windows 10 or later | `windows-*.zip` | Run `pet.exe`. Commands: `petctl.ps1 fail`. SmartScreen may ask about the unsigned exe. |
+| macOS 11 or later | `macos-*.tar.gz` | `xattr -d com.apple.quarantine pet` once (not notarized), then `./pet`. Commands: `scripts/petctl fail`. |
+
+On Linux the runtime libraries `libX11`, `libXext`, `libXfixes` and
+`libXrandr` are already on any X11 or XWayland desktop. See
+[Windows and macOS](#windows-and-macos) for what differs there.
 
 ## Build and run
 
@@ -240,18 +246,20 @@ src/main.zig     event loop, argument parsing, rendering into the window buffer
 src/pet.zig      the state machine (idle, walk, run, sit, sleep, alert, happy, angry, work, bat, climb, cling, hang, held, fall)
 src/sprites.zig  frame format, palette, orientation mapping, Character struct
 src/characters/  cat.zig, dog.zig, rabbit.zig: 16x16 ASCII frames per animal
-src/backend.zig  window backend interface and selection (`zig build -Dbackend=auto|x11|gnome`)
+src/backend.zig  window backend interface and selection (`zig build -Dbackend=auto|x11|gnome|win32|appkit`)
 src/backend/     x11.zig: override-redirect window, XImage blit, XFixes input shape;
                  gnome.zig: Unix-socket client of the GNOME Shell extension;
-                 auto.zig: gnome if the extension answers, else x11 (the default)
+                 auto.zig: gnome if the extension answers, else x11 (the Linux default);
+                 win32.zig: layered window (Windows); appkit.zig: NSPanel via the ObjC runtime (macOS)
 gnome-extension/ the GNOME Shell extension (one Clutter actor per pet window)
 scripts/install-extension  copies it into place; enabled after your next login (a running shell keeps the old copy)
 scripts/nested-shell  headless GNOME Shell with the extension, for testing without touching your session
 src/events.zig   command vocabulary and parser
-src/channel.zig  command channel interface; channel/fifo.zig is the named pipe
-src/audio.zig    embedded sound clips and playback interface; audio/shell.zig runs a CLI player
+src/channel.zig  command channel interface; channel/fifo.zig (POSIX FIFO), channel/win_pipe.zig (Windows pipe)
+src/audio.zig    embedded sound clips and playback interface; audio/shell.zig runs a CLI player, audio/win.zig uses PlaySound
 src/font.zig     3x5 bitmap font and the speech-bubble renderer
-src/c.h          the C headers translated by build.zig (Xlib, XFixes, libc bits)
+src/c.h          the C headers translated by build.zig (libc bits; Xlib, XFixes, XRandR on Linux)
+src/os.zig       clock, pid and getenv per OS
 src/assets/      WAV clips, embedded at build time by src/audio.zig
 tools/gen_sounds.py  regenerates those clips (stdlib Python)
 tools/sheet.zig  renders all frames to a PPM for reviewing the art
@@ -259,6 +267,9 @@ tools/make_gifs.py  renders the README GIFs into docs/img (Pillow)
 tools/test_integration.py  regression tests against a fake shell on a private socket (Python 3)
 tools/test_extension.mjs   extension protocol and click-through checks (Node.js)
 scripts/petctl   send a command to the pipe, or wrap a command and report its result (Python 3)
+scripts/petctl.ps1  the same for Windows (PowerShell)
+scripts/package  cross-build the release archives for every OS into dist/
+tools/cross_sysroot.py  fetch X11 headers/libs for Linux cross builds
 scripts/pet.sh   shell shortcuts (zb, zt, pet_run, pet_say)
 .claude/         Claude Code hooks that drive the cat
 ```
@@ -302,6 +313,25 @@ log out and back in; a running shell keeps the old copy until then.
 If the extension is disabled or the shell restarts while a pet is running,
 the pet exits cleanly.
 
+## Windows and macOS
+
+The same pet, with a backend per system (`zig build -Dtarget=...` picks it):
+
+| | Windows (`win32`) | macOS (`appkit`) |
+| --- | --- | --- |
+| Window | Layered, top-most tool window; no taskbar button, never takes focus | Borderless non-activating panel above normal windows, on every Space; no Dock icon |
+| Commands | Named pipe `\\.\pipe\pet` (`pet-NAME` with `--name`); send with `petctl.ps1` (in the zip; `scripts/petctl.ps1` in the repo) | FIFO `/tmp/pet.fifo`, same `scripts/petctl` as Linux |
+| Sound | Built in (PlaySound) | `afplay` |
+| `--roam` | Yes | Yes |
+| `--roam-group` | Not yet (needs a lock other than flock); the pet roams alone | Yes |
+
+Both are built from Linux: the Windows exe links only system DLLs, and the
+macOS binary loads AppKit at runtime, so neither needs Windows or an Apple
+SDK to build. Coordinates are physical pixels on Windows (per-monitor DPI
+aware) and points on macOS, so `--scale` looks the same size as other
+windows on a Retina screen. Started from a terminal, `pet.exe` logs there;
+double-clicked, it closes its own console window.
+
 ## Limitations
 
 - **Wayland with the X11 backend.** The cat is an X11 client, so under GNOME
@@ -315,9 +345,7 @@ the pet exits cleanly.
 - `--roam` needs the current GNOME extension, or XRandR 1.5+ on X11.
   An older extension supplies only its original screen geometry, and an
   X server without monitor information falls back to its root-window size.
-- **Linux only** for now. Windowing is X11 or the GNOME Shell extension,
-  commands arrive on a POSIX named pipe, and sounds go through
-  pw-play/paplay/aplay/ffplay. Any X11 desktop with a compositor works, and
-  so does XWayland on GNOME, KDE or Sway. macOS and Windows need a backend of
-  their own; see TODO.md.
+- On Linux any X11 desktop with a compositor works, and so does XWayland on
+  GNOME, KDE or Sway. The Windows and macOS backends are newer and less
+  tried; see [Windows and macOS](#windows-and-macos).
 - Sounds are synthesized placeholders; real recordings are on the roadmap.

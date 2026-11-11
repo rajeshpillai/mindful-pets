@@ -4,18 +4,24 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Window backend: auto (default: the GNOME Shell extension when it is
-    // running, else X11), x11, or gnome alone. AppKit or Win32 backends would
-    // be added to this enum and to src/backend.zig.
-    const Backend = enum { auto, x11, gnome };
-    const backend = b.option(Backend, "backend", "window backend: auto (default), x11 or gnome") orelse .auto;
+    // Window backend. Linux: auto (default: the GNOME Shell extension when it
+    // is running, else X11), x11, or gnome alone. Windows: win32. macOS: appkit.
+    // New backends are added to this enum and to src/backend.zig.
+    const Backend = enum { auto, x11, gnome, win32, appkit };
+    const os = target.result.os.tag;
+    const default_backend: Backend = switch (os) {
+        .windows => .win32,
+        .macos => .appkit,
+        else => .auto,
+    };
+    const backend = b.option(Backend, "backend", "window backend: auto (Linux default), x11, gnome, win32 (Windows), appkit (macOS)") orelse default_backend;
     const build_options = b.addOptions();
     build_options.addOption(Backend, "backend", backend);
     // Cross builds have no system X11 to find: point this at a tree made by
     // tools/cross_sysroot.py (usr/include, usr/lib/<arch>-linux-gnu).
     const x11_sysroot = b.option([]const u8, "x11-sysroot", "X11 headers and libraries for cross builds (tools/cross_sysroot.py)");
 
-    // Xlib, XFixes and a few libc headers, translated once by the build.
+    // libc headers, plus Xlib/XFixes/XRandR on Linux, translated once by the build.
     const translate = b.addTranslateC(.{
         .root_source_file = b.path("src/c.h"),
         .target = target,
@@ -48,6 +54,15 @@ pub fn build(b: *std.Build) void {
             }
         },
         .gnome => {},
+        // win32.zig, win_pipe.zig and audio/win.zig declare their own externs.
+        .win32 => {
+            exe.root_module.linkSystemLibrary("user32", .{});
+            exe.root_module.linkSystemLibrary("gdi32", .{});
+            exe.root_module.linkSystemLibrary("winmm", .{});
+        },
+        // appkit.zig loads AppKit and the Objective-C runtime with dlopen, so
+        // the binary links only libSystem and cross-compiles without an SDK.
+        .appkit => {},
     }
     b.installArtifact(exe);
 

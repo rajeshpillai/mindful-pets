@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
-# Cross-build release archives for every Linux target into dist/.
+# Cross-build release archives for every target into dist/.
 #
-#   scripts/package TAG [ARCH...]     ARCH default: x86_64 aarch64
+#   scripts/package TAG [TARGET...]
 #
-# Each target links against glibc 2.31 and the X11 libraries fetched by
-# tools/cross_sysroot.py, so one binary runs on any distro from 2020 on.
-# Writes dist/mindful-pets-TAG-linux-ARCH.tar.gz holding pet,
-# scripts/petctl, scripts/install-extension, the GNOME Shell extension and
-# README.md, and dist/SHA256SUMS. Used by .github/workflows/release.yml.
+# TARGET is OS-ARCH: linux-x86_64 linux-aarch64 windows-x86_64
+# windows-aarch64 macos-aarch64 macos-x86_64 (default: all of them).
+# Everything builds from Linux with Zig alone:
+#   linux    glibc 2.31 and the X11 libraries from tools/cross_sysroot.py;
+#            .tar.gz with pet, scripts/petctl, scripts/install-extension,
+#            the GNOME Shell extension and README.md
+#   windows  .zip with pet.exe, petctl.ps1 and README.md
+#   macos    .tar.gz with pet, scripts/petctl and README.md (AppKit is
+#            loaded at runtime, so no SDK is needed)
+# Also writes dist/SHA256SUMS. Used by .github/workflows/release.yml.
 set -euo pipefail
 
-tag="${1:?usage: scripts/package TAG [ARCH...]}"
+tag="${1:?usage: scripts/package TAG [TARGET...]}"
 shift
-archs=("$@")
-[ ${#archs[@]} -gt 0 ] || archs=(x86_64 aarch64)
+targets=("$@")
+[ ${#targets[@]} -gt 0 ] || targets=(linux-x86_64 linux-aarch64 windows-x86_64 windows-aarch64 macos-aarch64 macos-x86_64)
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
@@ -22,18 +27,50 @@ mkdir -p dist
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-for arch in "${archs[@]}"; do
-  sysroot="$(python3 tools/cross_sysroot.py "$arch")"
-  zig build -Doptimize=ReleaseSafe -Dtarget="$arch-linux-gnu.2.31" \
-    -Dx11-sysroot="$sysroot" --prefix "$work/out-$arch"
-  name="mindful-pets-$tag-linux-$arch"
+for target in "${targets[@]}"; do
+  os="${target%%-*}"
+  arch="${target#*-}"
+  name="mindful-pets-$tag-$target"
   pkg="$work/$name"
-  mkdir -p "$pkg/scripts"
-  install -m 755 "$work/out-$arch/bin/pet" "$pkg/pet"
-  install -m 755 scripts/petctl scripts/install-extension "$pkg/scripts/"
-  cp -r gnome-extension "$pkg/gnome-extension"
-  cp README.md "$pkg/"
-  tar -C "$work" -czf "dist/$name.tar.gz" "$name"
-  echo "packaged dist/$name.tar.gz"
+  out="$work/out-$target"
+  mkdir -p "$pkg"
+  case "$os" in
+    linux)
+      sysroot="$(python3 tools/cross_sysroot.py "$arch")"
+      zig build -Doptimize=ReleaseSafe -Dtarget="$arch-linux-gnu.2.31" -Dx11-sysroot="$sysroot" --prefix "$out"
+      mkdir -p "$pkg/scripts"
+      install -m 755 "$out/bin/pet" "$pkg/pet"
+      install -m 755 scripts/petctl scripts/install-extension "$pkg/scripts/"
+      cp -r gnome-extension "$pkg/gnome-extension"
+      cp README.md "$pkg/"
+      tar -C "$work" -czf "dist/$name.tar.gz" "$name"
+      echo "packaged dist/$name.tar.gz"
+      ;;
+    windows)
+      zig build -Doptimize=ReleaseSafe -Dtarget="$arch-windows-gnu" --prefix "$out"
+      cp "$out/bin/pet.exe" scripts/petctl.ps1 README.md "$pkg/"
+      python3 -I - "$work" "$name" "dist/$name.zip" <<'PY'
+import os, sys, zipfile
+base, name, dest = sys.argv[1:]
+with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
+    for f in sorted(os.listdir(os.path.join(base, name))):
+        z.write(os.path.join(base, name, f), f"{name}/{f}")
+PY
+      echo "packaged dist/$name.zip"
+      ;;
+    macos)
+      zig build -Doptimize=ReleaseSafe -Dtarget="$arch-macos.11.0" --prefix "$out"
+      mkdir -p "$pkg/scripts"
+      install -m 755 "$out/bin/pet" "$pkg/pet"
+      install -m 755 scripts/petctl "$pkg/scripts/"
+      cp README.md "$pkg/"
+      tar -C "$work" -czf "dist/$name.tar.gz" "$name"
+      echo "packaged dist/$name.tar.gz"
+      ;;
+    *)
+      echo "package: unknown target $target" >&2
+      exit 2
+      ;;
+  esac
 done
-(cd dist && sha256sum ./*.tar.gz | sed 's# \./# #' > SHA256SUMS)
+(cd dist && sha256sum ./*.tar.gz ./*.zip 2>/dev/null | sed 's# \./# #' > SHA256SUMS)
